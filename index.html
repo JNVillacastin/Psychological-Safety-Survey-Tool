@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TPS-7 Team Psychological Safety Survey</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:20px;background:#f7f8fb;color:#111}
+.container{max-width:960px;margin:auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 6px 20px rgba(20,30,60,.08)}
+h1{margin-top:0}
+.tabs{display:flex;gap:12px;margin-bottom:18px}
+.tab{padding:8px 16px;cursor:pointer;border-radius:8px;background:#eef2ff;color:#2563eb}
+.tab.active{background:#2563eb;color:#fff}
+.section{display:none}
+.section.active{display:block}
+button{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer}
+button.ghost{background:#eef2ff;color:#2563eb}
+input[type=text]{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px}
+.group-card{display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px}
+.question{margin:10px 0;padding:10px;border:1px solid #e5e7eb;border-radius:8px}
+.scale{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.small{font-size:13px;color:#555}
+.chartWrap{max-width:700px;margin:auto}
+hr{margin:24px 0;border:none;border-top:1px solid #e5e7eb}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>TPS-7: Team Psychological Safety Survey (COMG 352 Activity)</h1>
+<div class="tabs">
+  <div class="tab active" data-tab="home">Home</div>
+  <div class="tab" data-tab="groups">Groups</div>
+  <div class="tab" data-tab="compare">Compare Groups</div>
+</div>
+
+<!-- ===== HOME ===== -->
+<section id="home" class="section active">
+  <h3>Instructions</h3>
+  <p>The <strong>Team Psychological Safety Scale (TPS-7)</strong> measures the extent to which members of a group feel safe to take interpersonal risks—such as asking questions, sharing ideas, and admitting mistakes. You can create up to five groups (e.g., different teams) and complete the seven-item questionnaire for each.</p>
+  <p>Each item uses a <strong>1–7 scale (1 = <em> strongly disagree </em>, 7 = <em>strongly agree</em>)</strong>. After completing a group’s survey, its score is converted to a percentile relative to an elite-athlete reference sample (≈ 50 = typical / healthy).</p>
+  
+  <p> Please input groups you currently belong to (both primary and secondary) in the <strong> "Groups" </strong> tab. You can compare your perceived psychological safety between the groups you belong to in the <strong> "Compare Groups" </strong> tab
+  
+  <p class="small"><strong>Interpretation guide</strong><br>
+  <span style="color:#ef4444">0–30 %</span> Low | 30–59 % Typical/Healthy | 60–84 % High | ≥ 85 % Very High</p>
+  <hr>
+  <p><strong>References</strong></p>
+  <p class="small">Edmondson, A. C. (1999). Psychological safety and learning behavior in work teams. <em>Administrative Science Quarterly, 44</em>(2), 350–383. https://doi.org/10.2307/2666999</p>
+</section>
+
+<!-- ===== GROUPS ===== -->
+<section id="groups" class="section">
+  <p class="small">Create a group, complete the TPS-7, and view results. Up to five groups are stored locally in your browser.</p>
+  <div>
+    <label>Group name</label>
+    <div style="display:flex;gap:8px;">
+      <input id="groupName" placeholder="e.g., Team Alpha">
+      <button id="addGroup">Add group</button>
+    </div>
+    <div id="groupList"></div>
+  </div>
+
+  <hr>
+
+  <div id="survey" style="display:none">
+    <h3 id="surveyTitle"></h3>
+    <form id="form"></form>
+    <button id="saveAnswers">Save answers</button>
+    <button id="cancelSurvey" class="ghost">Cancel</button>
+  </div>
+
+  <div id="results" style="display:none;margin-top:24px">
+    <h3>Group Results</h3>
+    <div id="resultsContent"></div>
+  </div>
+</section>
+
+<!-- ===== COMPARE GROUPS ===== -->
+<section id="compare" class="section">
+  <h3>Compare Groups</h3>
+  <div id="compareContent"></div>
+</section>
+</div>
+
+<script>
+/* ===== Configurable elite-athlete norms ===== */
+const normMean=5.30, normSD=0.85;
+
+/* ===== Items & constants ===== */
+const ITEMS=[
+"1. If you make a mistake in this team, it is often held against you.",
+"2. Members of this team are able to bring up problems and tough issues.",
+"3. People on this team sometimes reject others for being different.",
+"4. It is safe to take a risk in this team.",
+"5. It is difficult to ask other members of this team for help.",
+"6. No one on this team would deliberately act in a way that undermines my efforts.",
+"7. Working with members of this team, my unique skills and talents are valued and utilized."
+];
+const REVERSE=[0,2,4];
+const STORAGE="tps7_v4_groups";
+let groups=JSON.parse(localStorage.getItem(STORAGE)||"[]");
+
+/* ===== Tabs ===== */
+const tabs=document.querySelectorAll(".tab"),sections=document.querySelectorAll(".section");
+tabs.forEach(t=>t.onclick=()=>{
+  tabs.forEach(x=>x.classList.remove("active"));
+  sections.forEach(s=>s.classList.remove("active"));
+  t.classList.add("active");
+  document.getElementById(t.dataset.tab).classList.add("active");
+  if(t.dataset.tab==="compare")showComparison();
+});
+
+/* ===== Utility functions ===== */
+function erf(x){const s=Math.sign(x);x=Math.abs(x);
+const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+const t=1/(1+p*x);const y=1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);return s*y;}
+function avgToPct(a){const z=(a-normMean)/normSD;return +(50*(1+erf(z/Math.SQRT2))).toFixed(1);}
+function interpret(p){if(p<30)return["Low","Team may feel unsafe raising issues."];if(p<60)return["Typical/Healthy","Generally open and supportive."];if(p<85)return["High","Members feel safe to speak up."];return["Very High","Strong inclusive culture."];}
+function esc(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+
+/* ===== Group list rendering ===== */
+const gList=document.getElementById("groupList"),addBtn=document.getElementById("addGroup"),gName=document.getElementById("groupName"),
+survey=document.getElementById("survey"),surveyTitle=document.getElementById("surveyTitle"),form=document.getElementById("form"),
+save=document.getElementById("saveAnswers"),cancel=document.getElementById("cancelSurvey"),
+results=document.getElementById("results"),resultsContent=document.getElementById("resultsContent"),compareDiv=document.getElementById("compareContent");
+
+function saveGroups(){localStorage.setItem(STORAGE,JSON.stringify(groups));render();}
+function render(){
+  gList.innerHTML="";
+  if(!groups.length){gList.innerHTML="<p class='small'>No groups yet.</p>";return;}
+  groups.forEach((g,i)=>{
+    const d=document.createElement("div");
+    d.className="group-card";
+    d.innerHTML=`<div><strong>${esc(g.name)}</strong><br><span class='small'>${g.answers?"Completed":"Not completed"}</span></div>
+      <div style='display:flex;gap:6px'>
+        <button data-i='${i}' class='start'>${g.answers?"Re-take":"Start"}</button>
+        <button data-i='${i}' class='del ghost'>Delete</button>
+      </div>`;
+    gList.appendChild(d);
+  });
+  document.querySelectorAll(".start").forEach(b=>b.onclick=()=>open(+b.dataset.i));
+  document.querySelectorAll(".del").forEach(b=>b.onclick=()=>{groups.splice(+b.dataset.i,1);saveGroups();});
+}
+addBtn.onclick=()=>{const n=gName.value.trim();if(!n)return alert("Enter group name");if(groups.length>=5)return alert("Max 5 groups");groups.push({name:n});gName.value="";saveGroups();};
+
+/* ===== Survey ===== */
+function open(i){
+  survey.style.display="block";results.style.display="none";surveyTitle.textContent="Survey: "+groups[i].name;form.innerHTML="";
+  ITEMS.forEach((q,qi)=>{const w=document.createElement("div");w.className="question";
+    w.innerHTML=`<label>${q}</label><div class='scale'>${[1,2,3,4,5,6,7].map(n=>`<label><input type='radio' name='q${qi}' value='${n}'>${n}</label>`).join("")}</div>`;form.appendChild(w);});
+  save.onclick=()=>{
+    const a=[];for(let j=0;j<7;j++){const v=form.querySelector(`input[name=q${j}]:checked`);if(!v)return alert("Answer all items");let val=+v.value;if(REVERSE.includes(j))val=8-val;a.push(val);}
+    const avg=a.reduce((x,y)=>x+y,0)/7,pct=avgToPct(avg),now=new Date().toISOString();
+    if(!groups[i].history)groups[i].history=[];groups[i].history.push({date:now,avg,percentile:pct});
+    groups[i].answers=a;saveGroups();survey.style.display="none";showResult(i);
+  };
+  cancel.onclick=()=>survey.style.display="none";
+}
+
+/* ===== Individual result ===== */
+function showResult(i){
+  const g=groups[i],h=g.history,latest=h[h.length-1],[lab,desc]=interpret(latest.percentile);
+  results.style.display="block";
+  resultsContent.innerHTML=`<h4>${esc(g.name)}</h4>
+  <p><strong>Avg score:</strong> ${latest.avg.toFixed(2)} / 7 | <strong>Percentile:</strong> ${latest.percentile}<br><em>${lab}</em> – ${desc}</p>
+  <div class='chartWrap'><canvas id='bar'></canvas></div>`;
+  new Chart(document.getElementById("bar"),{type:'bar',data:{labels:[g.name],datasets:[{data:[latest.percentile],backgroundColor:"rgba(37,99,235,.6)"}]},options:{indexAxis:'y',scales:{x:{min:0,max:100,title:{display:true,text:'Percentile'}}},plugins:{legend:{display:false}}}});
+  if(h.length>1){resultsContent.insertAdjacentHTML("beforeend","<h4>Change over time</h4><canvas id='line'></canvas>");
+    new Chart(document.getElementById("line"),{type:'line',data:{labels:h.map(r=>r.date.slice(0,10)),datasets:[{label:'Percentile',data:h.map(r=>r.percentile),borderColor:'#2563eb',fill:false}]},options:{scales:{y:{min:0,max:100,title:{display:true,text:'Percentile'}}}}});}
+}
+
+/* ===== Compare Groups (with axis labels + reference line) ===== */
+function showComparison(){
+  compareDiv.innerHTML="";
+  if(!groups.length){compareDiv.innerHTML="<p class='small'>No groups available yet.</p>";return;}
+  const labels=[],scores=[],pcts=[];
+  groups.forEach(g=>{
+    if(g.history&&g.history.length){
+      const last=g.history[g.history.length-1];
+      labels.push(g.name);scores.push(+last.avg.toFixed(2));pcts.push(last.percentile);
+    }
+  });
+
+  compareDiv.innerHTML=`<div class='chartWrap'><canvas id='cmpScores'></canvas></div>
+  <p class='small'>Average TPS-7 scores (1–7) for each group.</p>
+  <div class='chartWrap' style='margin-top:24px'><canvas id='cmpPct'></canvas></div>
+  <p class='small'>Percentile comparison relative to elite-athlete sample (50 = typical).</p>`;
+
+  // --- Average score chart with axis label
+  new Chart(document.getElementById("cmpScores"),{
+    type:'bar',
+    data:{labels,datasets:[{label:'Avg TPS-7',data:scores,backgroundColor:'rgba(75,192,192,.6)'}]},
+    options:{
+      scales:{y:{min:1,max:7,title:{display:true,text:'Average TPS-7 Score'}}},
+      plugins:{legend:{display:false}}
+    }
+  });
+
+  // --- Percentile chart with axis label and 50th-percentile reference line
+  new Chart(document.getElementById("cmpPct"),{
+    type:'bar',
+    data:{labels,datasets:[{label:'Percentile',data:pcts,backgroundColor:'rgba(37,99,235,.6)'}]},
+    options:{
+      scales:{y:{min:0,max:100,title:{display:true,text:'Percentile Rank (Elite Athlete Norms)'}}},
+      plugins:{
+        legend:{display:false},
+        annotation:{
+          annotations:{
+            refLine:{type:'line',yMin:50,yMax:50,borderColor:'#444',borderDash:[6,6],borderWidth:1.5,
+              label:{display:true,content:'Elite-Athlete Mean (50th %)',position:'end'}}
+          }
+        }
+      }
+    },
+    plugins:[{
+      id:'refLinePlugin',
+      afterDraw(chart){
+        const {ctx,chartArea:{left,right},scales:{y}}=chart;
+        const yPix=y.getPixelForValue(50);
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([6,6]);
+        ctx.moveTo(left,yPix);
+        ctx.lineTo(right,yPix);
+        ctx.lineWidth=1.2;
+        ctx.strokeStyle='#444';
+        ctx.stroke();
+        ctx.restore();
+      }
+    }]
+  });
+}
+
+/* ===== Init ===== */
+render();
+</script>
+</body>
+</html>
+
+
+
